@@ -2,7 +2,7 @@
 
 WALL_PATH="$HOME/doc/nebula-1920x1200.jpg"
 OUT_PATH="$HOME/tmp/wall.jpg"
-TODAY_PATH="$HOME/tmp/today.txt"
+LOG_PATH="$HOME/tmp/today.txt"
 
 WALL_W=1920
 WALL_H=1200
@@ -11,8 +11,17 @@ LEN=240    # Must be a factor of both WALL_W and WALL_H!
 SQUARES_X=$(($WALL_W/$LEN))
 SQUARES_Y=$(($WALL_H/$LEN))
 
+# At the start of a new day, clear all previous commits
+log_date=$(/usr/bin/date -I -r $LOG_PATH)
+today=$(/usr/bin/date -I)
+
+if [ $log_date != $today ]; then
+	> $LOG_PATH
+fi
+
 # Count number of commits today
-nMax=$(/usr/bin/wc -l < $TODAY_PATH)
+n_max=$(/usr/bin/wc -l < $LOG_PATH)
+n_max=$n_max*8
 
 # Reset
 /usr/bin/magick $WALL_PATH $OUT_PATH
@@ -21,7 +30,7 @@ n=0
 # Draw squares over wallpaper
 for (( j=0; j<$SQUARES_Y; j++ )); do
 	for (( i=0; i<$SQUARES_X; i++, ((n++)) )); do
-		if [[ $n -lt $nMax ]]; then
+		if [[ $n -lt $n_max ]]; then
 			# Each commit frees a square off the wallpaper
 			continue
 		fi
