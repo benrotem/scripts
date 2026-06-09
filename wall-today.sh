@@ -21,7 +21,9 @@ fi
 
 # Count number of commits today
 n_max=$(/usr/bin/wc -l < $LOG_PATH)
-n_max=$n_max*8
+n_max=$n_max*5
+count_signif=$(/usr/bin/grep -c SIGNIF $LOG_PATH)
+n_max=$(($n_max+($count_signif*15)))
 
 # Reset
 /usr/bin/magick $WALL_PATH $OUT_PATH
