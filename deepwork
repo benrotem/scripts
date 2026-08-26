@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# Starts a deep work session for a specified duration.
+
+duration=$1
+
+NOTIF_SUMMARY='"DEEP WORK COMPLETE"'
+NOTIF_BODY='"Well done, go relax!"'
+NOTIF_COMMAND="notify-send --urgency=critical $NOTIF_SUMMARY $NOTIF_BODY"
+
+err_garbled_time() {
+  printf 'Garbled time. Please specify a positive duration in minutes.\n' >&2
+  exit 1
+}
+
+# Verify duration is a non-negative integer.
+case "$duration" in
+  '' | *[!0-9]*) err_garbled_time ;;
+esac
+
+# Strip leading zeros.
+duration=$((10#$duration))
+
+# Verify duration is nonzero.
+[ $duration -eq 0 ] && err_garbled_time
+
+# Schedule a notification to appear at the end of the session.
+printf '%s\n' "$NOTIF_COMMAND" | at now + "$duration" minutes > /dev/null 2>&1
+printf 'Started a deep work session for %s minutes.\n' "$duration"
+printf '\033[93m⌁⌁⌁ 🧠 ⌁⌁⌁\033[0m\n'
