@@ -17,6 +17,12 @@ uuid=$(
     inbox limit:1
 )
 
+# Terminate if inbox is empty.
+if [ -z "$uuid" ]; then
+  echo "Inbox is empty"
+  exit 0
+fi
+
 desc=$(task _get "$uuid.description")
 
 echo "$desc"
