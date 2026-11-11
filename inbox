@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# Launches an interactive session to process 'stuff' in the taskwarrior 'Inbox'.
+# Items are organised into the appropriate list:
+# next actions, someday, awaiting or projects.
+# Provides an easy, quick way to clear your inbox, instead of manually modifying tasks.
+#
+# The session abides by 3 key principles:
+#   - inbox is always processed from the top (never skip an item)
+#   - items are processed one at a time, so each receives your full attention
+#   - items never re-enter the inbox (one-way: out)
+
+# Identify the top item in the inbox.
+uuid=$(
+  task rc.verbose=nothing rc.color=off \
+    rc.report.inbox.columns=uuid rc.report.inbox.labels=U \
+    inbox limit:1
+)
+
+desc=$(task _get "$uuid.description")
+
+echo "$desc"
