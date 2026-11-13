@@ -10,6 +10,11 @@
 #   - items are processed one at a time, so each receives your full attention
 #   - items never re-enter the inbox (one-way: out)
 
+# Prompts for a single keypress (stored in $REPLY).
+prompt_user() {
+  read -rn1 -p "$1" ; echo ""
+}
+
 # Identify the top item in the inbox.
 uuid=$(
   task rc.verbose=nothing rc.color=off \
@@ -23,6 +28,15 @@ if [ -z "$uuid" ]; then
   exit 0
 fi
 
+# Present the item.
+id=$(task _get "$uuid.id")
 desc=$(task _get "$uuid.description")
 
-echo "$desc"
+echo "[ID $id] $desc"
+
+prompt_user "Is this to be acted upon, soon? [y/n] "
+case $REPLY in
+  n) echo "You replied no" ; exit 0 ;;
+  y) echo "You replied yes" ; exit 0 ;;
+  *) echo "Invalid response" ; exit 1 ;;
+esac
