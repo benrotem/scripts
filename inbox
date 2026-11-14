@@ -34,9 +34,26 @@ desc=$(task _get "$uuid.description")
 
 echo "[ID $id] $desc"
 
+# Prompt to decide whether item is actionable.
 prompt_user "Is this to be acted upon, soon? [y/n] "
+
 case $REPLY in
-  n) echo "You replied no" ; exit 0 ;;
+  n) echo "Where does this belong?"
+     prompt_user "[t]rash, [s]omeday or [f]ile? "
+
+     case $REPLY in
+       s)   # Move to someday list.
+            task "$uuid" modify -in +someday ;;
+
+       f)   # File and delete on confirmation.
+            prompt_user "Confirm you have filed it. [ENTER] "
+            ;&  # fallthrough
+
+       t|d) # Delete.
+            task rc.confirmation=off "$uuid" delete ;;
+     esac ;;
+
   y) echo "You replied yes" ; exit 0 ;;
+
   *) echo "Invalid response" ; exit 1 ;;
 esac
