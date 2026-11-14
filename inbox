@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Launches an interactive session to process 'stuff' in the taskwarrior 'Inbox'.
+# Launches an interactive session to process 'stuff' in the Taskwarrior 'Inbox'.
 # Items are organised into the appropriate list:
 # next actions, someday, awaiting or projects.
 # Provides an easy, quick way to clear your inbox, instead of manually modifying tasks.
@@ -46,14 +46,33 @@ case $REPLY in
             task "$uuid" modify -in +someday ;;
 
        f)   # File and delete on confirmation.
-            prompt_user "Confirm you have filed it. [ENTER] "
-            ;&  # fallthrough
+            prompt_user "Confirm you have filed it. [ENTER] " ;&  # fallthrough
 
        t|d) # Delete.
             task rc.confirmation=off "$uuid" delete ;;
+
+       *)   echo "Invalid response" ; exit 1 ;;
      esac ;;
 
-  y) echo "You replied yes" ; exit 0 ;;
+  y) prompt_user "Will this require more than one action? [y/n] "
+
+     case $REPLY in
+       y) # Create a new project.
+          echo "Creating a new project. Give it a unique name (in Taskwarrior syntax)."
+          read -r -p "  project:" project
+
+          # Populate the project with next actions.
+          echo "Define the next visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
+
+          while read -rp "  task add project:$project " -a args && [ "${#args[@]}" -gt 0 ]; do
+            task add "project:$project" "${args[@]}"
+          done
+
+          # Delete the original inbox item, now stale.
+          task rc.confirmation=off "$uuid" delete ;;
+
+       *) echo "Invalid response" ; exit 1 ;;
+     esac ;;
 
   *) echo "Invalid response" ; exit 1 ;;
 esac
