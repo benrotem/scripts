@@ -9,6 +9,11 @@
 #   - inbox is always processed from the top (never skip an item)
 #   - items are processed one at a time, so each receives your full attention
 #   - items never re-enter the inbox (one-way: out)
+#
+# TODO: Handle non-[ENTER] replies on deletion confirmations.
+# TODO: Repeated code: write a confirm-and-delete function.
+# TODO: Inconsistency: read -n1 (single keypress) is wrapped but normal read is not.
+#   Write a more generic prompt-user function.
 
 # Prompts for a single keypress (stored in $REPLY).
 prompt_user() {
@@ -42,34 +47,66 @@ case $REPLY in
      prompt_user "[t]rash, [s]omeday or [f]ile? "
 
      case $REPLY in
-       s)   # Move to someday list.
-            task "$uuid" modify -in +someday ;;
+       s) # Move to someday list.
+          task "$uuid" modify -in +someday ;;
 
-       f)   # File and delete on confirmation.
-            prompt_user "Confirm you have filed it. [ENTER] " ;&  # fallthrough
+       f) # File and delete on confirmation.
+          prompt_user "Confirm it is filed. [ENTER] " ;&  # fallthrough
 
-       t|d) # Delete.
-            task rc.confirmation=off "$uuid" delete ;;
+       t) # Delete.
+          task rc.confirmation=off "$uuid" delete ;;
 
-       *)   echo "Invalid response" ; exit 1 ;;
+       *) echo "Invalid response" ; exit 1 ;;
      esac ;;
 
   y) prompt_user "Will this require more than one action? [y/n] "
 
      case $REPLY in
        y) # Create a new project.
-          echo "Creating a new project. Give it a unique name (in Taskwarrior syntax)."
-          read -r -p "  project:" project
+          echo "Creating a new project. Give it a unique name."
+          read -r -p "  project: " project
 
           # Populate the project with next actions.
-          echo "Define the next visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
+          echo "Define visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
 
           while read -rp "  task add project:$project " -a args && [ "${#args[@]}" -gt 0 ]; do
-            task add "project:$project" "${args[@]}"
+            # TODO: Mirror the procedure followed for singular next actions (do it, delegate, defer) here.
+            task add project:"$project" "${args[@]}"
           done
 
           # Delete the original inbox item, now stale.
           task rc.confirmation=off "$uuid" delete ;;
+
+       n) # Modify item to define the next action.
+          echo "Rephrase it as a visible, finite action (in Taskwarrior syntax)."
+
+          if read -rp "  task $id modify -in " -a args && [ "${#args[@]}" -gt 0 ]; then
+            task "$uuid" modify -in "${args[@]}"
+          fi
+
+          # Prompt to decide whether to act further.
+          echo "Added as a next action."
+          prompt_user "Optionally, would you like to [d]o it now, [g]ive, or [c]alendar? "
+
+          case $REPLY in
+            d) # Do now and mark done on confirmation.
+               prompt_user "Confirm it is done. [ENTER] "
+               task "$uuid" done ;;
+
+            g) # Delegate.
+               prompt_user "Confirm it is delegated. [ENTER] "
+
+               # Make note of the delegatee and move to awaiting list.
+               read -r -p "  who: " who
+               task "$uuid" modify +awaiting who:"$who" ;;
+
+            c) # Calendarise.
+               prompt_user "Confirm it is calendarised. [ENTER] "
+
+               # Hide until the allocated date.
+               read -r -p "  when: " when
+               task "$uuid" modify wait:"$when" ;;
+          esac ;;
 
        *) echo "Invalid response" ; exit 1 ;;
      esac ;;
