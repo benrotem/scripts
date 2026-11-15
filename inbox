@@ -14,6 +14,8 @@
 # TODO: Repeated code: write a confirm-and-delete function.
 # TODO: Inconsistency: read -n1 (single keypress) is wrapped but normal read is not.
 #   Write a more generic prompt-user function.
+# TODO: The projects branch of logic assumes an item creates a NEW project.
+#   Adapt it to handle both new and existing projects.
 
 # Prompts for a single keypress (stored in $REPLY).
 prompt_user() {
@@ -74,15 +76,17 @@ case $REPLY in
             task add project:"$project" "${args[@]}"
           done
 
-          # Delete the original inbox item, now stale.
-          task rc.confirmation=off "$uuid" delete ;;
+          # Verify the new project exists (at least one action was added),
+          # and delete the original inbox item, now stale.
+          if [ "$(task +PENDING project.is:"$project" count)" -gt 0 ]; then
+            task rc.confirmation=off "$uuid" delete
+          fi ;;
 
        n) # Modify item to define the next action.
           echo "Rephrase it as a visible, finite action (in Taskwarrior syntax)."
 
-          if read -rp "  task $id modify -in " -a args && [ "${#args[@]}" -gt 0 ]; then
-            task "$uuid" modify -in "${args[@]}"
-          fi
+          read -rp "  task $id modify -in " -a args
+          task "$uuid" modify -in "${args[@]}"
 
           # Prompt to decide whether to act further.
           echo "Added as a next action."
