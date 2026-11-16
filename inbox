@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+#
+# Launches an interactive session to process 'stuff' in the Taskwarrior 'Inbox'.
+# Items are organised into the appropriate list:
+# next actions, someday, awaiting or projects.
+# Provides an easy, quick way to clear your inbox, instead of manually modifying tasks.
+#
+# The session abides by 3 key principles:
+#   - inbox is always processed from the top (never skip an item)
+#   - items are processed one at a time, so each receives your full attention
+#   - items never re-enter the inbox (one-way: out)
+#
+# TODO: Handle non-[ENTER] replies on deletion confirmations.
+# TODO: Repeated code: write a confirm-and-delete function.
+# TODO: Inconsistency: read -n1 (single keypress) is wrapped but normal read is not.
+#   Write a more generic prompt_user function.
+
+# Prompts for a single keypress (stored in $REPLY).
+prompt_user() {
+  read -rn1 -p "$1" ; echo ""
+}
+
+# Presents a provided item to the user for context.
+present_task() {
+  local uuid=$1
+
+  local id=$(task _get "$uuid".id)
+  local desc=$(task _get "$uuid".description)
+
+  echo "[ID $id] $desc"
+}
+
+# Organises a provided next action at the user's discretion,
+# to do now, delegate or calendarise.
+organise_action() {
+  local uuid=$1
+
+  # Give context of the provided task to the user.
+  present_task "$uuid"
+
+  # Prompt to decide whether to act further on it.
+  prompt_user "Optionally, would you like to [d]o it now, [g]ive, or [c]alendar? "
+
+  case $REPLY in
+    d) # Do now and mark done on confirmation.
+       prompt_user "Confirm it is done. [ENTER] "
+       task "$uuid" done ;;
+
+    g) # Delegate.
+       prompt_user "Confirm it is delegated. [ENTER] "
+
+       # Make note of the delegatee and move to awaiting list.
+       local who
+       read -r -p "  who: " who
+       task "$uuid" modify +awaiting who:"$who" ;;
+
+    c) # Calendarise.
+       prompt_user "Confirm it is calendarised. [ENTER] "
+
+       # Hide until the allocated date.
+       local when
+       read -r -p "  when: " when
+       task "$uuid" modify wait:"$when" ;;
+  esac
+}
+
+# Identifies the top item in the inbox.
+get_top_item() {
+  task rc.verbose=nothing rc.color=off \
+    rc.report.inbox.columns=uuid rc.report.inbox.labels=U \
+    inbox limit:1
+}
+
+# Follows the decision tree to process one item.
+process_item() {
+  local uuid="$1"
+
+  # Prompt to decide whether item is actionable.
+  present_task "$uuid"
+  prompt_user "Is this to be acted upon, soon? [y/n] "
+
+  case $REPLY in
+    n) echo "Where does this belong?"
+       prompt_user "[t]rash, [s]omeday or [f]ile? "
+
+       case $REPLY in
+         s) # Move to someday list.
+            task "$uuid" modify -in +someday ;;
+
+         f) # File and delete on confirmation.
+            prompt_user "Confirm it is filed. [ENTER] " ;&  # fallthrough
+
+         t) # Delete.
+            task rc.confirmation=off "$uuid" delete ;;
+
+         *) echo "[ERROR] Invalid response." >&2 ; return 1 ;;
+       esac ;;
+
+    y) prompt_user "Will this require more than one action? [y/n] "
+
+       case $REPLY in
+         y) # Create a new project, or add to an existing one.
+            echo "Give the new project a unique name, or add to an existing one."
+            local project
+            read -r -p "  project: " project
+
+            if [ -z "$project" ]; then
+              echo "[ERROR] A project needs a name." >&2 ; return 1
+            fi
+
+            # Populate the project with next actions.
+            echo "Define visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
+            local actions=()
+
+            local args
+            while read -rp "  task add project:$project " -a args && [ "${#args[@]}" -gt 0 ]; do
+              task add project:"$project" "${args[@]}" \
+                && actions+=("$(task rc.verbose=nothing +LATEST uuids)")
+            done
+
+            # User has finished adding actions, organise them all.
+            local action
+            for action in "${actions[@]}"; do
+              organise_action "$action"
+            done
+
+            # Verify at least one action was added and delete the original inbox item, now stale.
+            if [ "${#actions[@]}" -gt 0 ]; then
+              task rc.confirmation=off "$uuid" delete
+            fi ;;
+
+         n) # Modify item to define the next action.
+            echo "Rephrase it as a visible, finite action (in Taskwarrior syntax)."
+
+            local args
+            read -rp "  task $(task _get "$uuid".id) modify -in " -a args
+            task "$uuid" modify -in "${args[@]}"
+            organise_action "$uuid" ;;
+
+         *) echo "[ERROR] Invalid response." >&2 ; return 1 ;;
+       esac ;;
+
+    *) echo "[ERROR] Invalid response." >&2 ; return 1 ;;
+  esac
+}
+
+main() {
+  local uuid
+
+  while uuid=$(get_top_item) ; [ -n "$uuid" ]; do
+    process_item "$uuid"
+  done
+
+  echo "Inbox is empty!"
+}
+
+main
