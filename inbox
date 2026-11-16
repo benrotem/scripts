@@ -13,13 +13,60 @@
 # TODO: Handle non-[ENTER] replies on deletion confirmations.
 # TODO: Repeated code: write a confirm-and-delete function.
 # TODO: Inconsistency: read -n1 (single keypress) is wrapped but normal read is not.
-#   Write a more generic prompt-user function.
-# TODO: The projects branch of logic assumes an item creates a NEW project.
-#   Adapt it to handle both new and existing projects.
+#   Write a more generic prompt_user function.
 
 # Prompts for a single keypress (stored in $REPLY).
 prompt_user() {
   read -rn1 -p "$1" ; echo ""
+}
+
+# Counts all tasks in a project, irrespective of their status.
+project_size() {
+  task project.is:"$1" count
+}
+
+# Presents a provided item to the user for context.
+present_task() {
+  local uuid=$1
+
+  local id=$(task _get "$uuid".id)
+  local desc=$(task _get "$uuid".description)
+
+  echo "[ID $id] $desc"
+}
+
+# Organises a provided next action at the user's discretion,
+# to do now, delegate or calendarise.
+organise_action() {
+  local uuid=$1
+
+  # Give context of the provided task to the user.
+  present_task "$uuid"
+
+  # Prompt to decide whether to act further on it.
+  prompt_user "Optionally, would you like to [d]o it now, [g]ive, or [c]alendar? "
+
+  case $REPLY in
+    d) # Do now and mark done on confirmation.
+       prompt_user "Confirm it is done. [ENTER] "
+       task "$uuid" done ;;
+
+    g) # Delegate.
+       prompt_user "Confirm it is delegated. [ENTER] "
+
+       # Make note of the delegatee and move to awaiting list.
+       local who
+       read -r -p "  who: " who
+       task "$uuid" modify +awaiting who:"$who" ;;
+
+    c) # Calendarise.
+       prompt_user "Confirm it is calendarised. [ENTER] "
+
+       # Hide until the allocated date.
+       local when
+       read -r -p "  when: " when
+       task "$uuid" modify wait:"$when" ;;
+  esac
 }
 
 # Identify the top item in the inbox.
@@ -35,13 +82,8 @@ if [ -z "$uuid" ]; then
   exit 0
 fi
 
-# Present the item.
-id=$(task _get "$uuid.id")
-desc=$(task _get "$uuid.description")
-
-echo "[ID $id] $desc"
-
 # Prompt to decide whether item is actionable.
+present_task "$uuid"
 prompt_user "Is this to be acted upon, soon? [y/n] "
 
 case $REPLY in
@@ -64,53 +106,31 @@ case $REPLY in
   y) prompt_user "Will this require more than one action? [y/n] "
 
      case $REPLY in
-       y) # Create a new project.
-          echo "Creating a new project. Give it a unique name."
+       y) # Create a new project, or add to an existing one.
+          echo "Give the new project a unique name, or add to an existing one."
           read -r -p "  project: " project
+          size_before=$(project_size "$project")
 
           # Populate the project with next actions.
           echo "Define visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
 
           while read -rp "  task add project:$project " -a args && [ "${#args[@]}" -gt 0 ]; do
-            # TODO: Mirror the procedure followed for singular next actions (do it, delegate, defer) here.
-            task add project:"$project" "${args[@]}"
+            task add project:"$project" "${args[@]}" \
+              && organise_action "$(task rc.verbose=nothing +LATEST uuids)"
           done
 
-          # Verify the new project exists (at least one action was added),
-          # and delete the original inbox item, now stale.
-          if [ "$(task +PENDING project.is:"$project" count)" -gt 0 ]; then
+          # Verify that an action was added to the project and
+          # delete the original inbox item, now stale.
+          if [ "$(project_size "$project")" -gt "$size_before" ]; then
             task rc.confirmation=off "$uuid" delete
           fi ;;
 
        n) # Modify item to define the next action.
           echo "Rephrase it as a visible, finite action (in Taskwarrior syntax)."
 
-          read -rp "  task $id modify -in " -a args
+          read -rp "  task $(task _get "$uuid".id) modify -in " -a args
           task "$uuid" modify -in "${args[@]}"
-
-          # Prompt to decide whether to act further.
-          echo "Added as a next action."
-          prompt_user "Optionally, would you like to [d]o it now, [g]ive, or [c]alendar? "
-
-          case $REPLY in
-            d) # Do now and mark done on confirmation.
-               prompt_user "Confirm it is done. [ENTER] "
-               task "$uuid" done ;;
-
-            g) # Delegate.
-               prompt_user "Confirm it is delegated. [ENTER] "
-
-               # Make note of the delegatee and move to awaiting list.
-               read -r -p "  who: " who
-               task "$uuid" modify +awaiting who:"$who" ;;
-
-            c) # Calendarise.
-               prompt_user "Confirm it is calendarised. [ENTER] "
-
-               # Hide until the allocated date.
-               read -r -p "  when: " when
-               task "$uuid" modify wait:"$when" ;;
-          esac ;;
+          organise_action "$uuid" ;;
 
        *) echo "Invalid response" ; exit 1 ;;
      esac ;;
