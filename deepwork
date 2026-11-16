@@ -1,6 +1,9 @@
 #!/bin/sh
 #
 # Starts a deep work session for a specified duration.
+# TODO(benrotem): in README.md mention that at and notify-send are required dependencies
+# TODO(benrotem): notif body tells you duration and logs this to a progress file
+# TODO(benrotem): allow specifying a time for completion (eg. 17:00)
 
 duration=$1
 
