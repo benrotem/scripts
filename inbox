@@ -64,78 +64,94 @@ organise_action() {
   esac
 }
 
-# Identify the top item in the inbox.
-uuid=$(
+# Identifies the top item in the inbox.
+get_top_item() {
   task rc.verbose=nothing rc.color=off \
     rc.report.inbox.columns=uuid rc.report.inbox.labels=U \
     inbox limit:1
-)
+}
 
-# Terminate if inbox is empty.
-if [ -z "$uuid" ]; then
-  echo "[INFO] Inbox is empty." ; exit 0
-fi
+# Follows the decision tree to process one item.
+process_item() {
+  local uuid="$1"
 
-# Prompt to decide whether item is actionable.
-present_task "$uuid"
-prompt_user "Is this to be acted upon, soon? [y/n] "
+  # Prompt to decide whether item is actionable.
+  present_task "$uuid"
+  prompt_user "Is this to be acted upon, soon? [y/n] "
 
-case $REPLY in
-  n) echo "Where does this belong?"
-     prompt_user "[t]rash, [s]omeday or [f]ile? "
+  case $REPLY in
+    n) echo "Where does this belong?"
+       prompt_user "[t]rash, [s]omeday or [f]ile? "
 
-     case $REPLY in
-       s) # Move to someday list.
-          task "$uuid" modify -in +someday ;;
+       case $REPLY in
+         s) # Move to someday list.
+            task "$uuid" modify -in +someday ;;
 
-       f) # File and delete on confirmation.
-          prompt_user "Confirm it is filed. [ENTER] " ;&  # fallthrough
+         f) # File and delete on confirmation.
+            prompt_user "Confirm it is filed. [ENTER] " ;&  # fallthrough
 
-       t) # Delete.
-          task rc.confirmation=off "$uuid" delete ;;
+         t) # Delete.
+            task rc.confirmation=off "$uuid" delete ;;
 
-       *) echo "[ERROR] Invalid response." >&2 ; exit 1 ;;
-     esac ;;
+         *) echo "[ERROR] Invalid response." >&2 ; return 1 ;;
+       esac ;;
 
-  y) prompt_user "Will this require more than one action? [y/n] "
+    y) prompt_user "Will this require more than one action? [y/n] "
 
-     case $REPLY in
-       y) # Create a new project, or add to an existing one.
-          echo "Give the new project a unique name, or add to an existing one."
-          read -r -p "  project: " project
+       case $REPLY in
+         y) # Create a new project, or add to an existing one.
+            echo "Give the new project a unique name, or add to an existing one."
+            local project
+            read -r -p "  project: " project
 
-          if [ -z "$project" ]; then
-            echo "[ERROR] A project needs a name." >&2 ; exit 1
-          fi
+            if [ -z "$project" ]; then
+              echo "[ERROR] A project needs a name." >&2 ; return 1
+            fi
 
-          # Populate the project with next actions.
-          echo "Define visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
-          actions=()
+            # Populate the project with next actions.
+            echo "Define visible, finite actions (in Taskwarrior syntax). [ENTER] to finish."
+            local actions=()
 
-          while read -rp "  task add project:$project " -a args && [ "${#args[@]}" -gt 0 ]; do
-            task add project:"$project" "${args[@]}" \
-              && actions+=("$(task rc.verbose=nothing +LATEST uuids)")
-          done
+            local args
+            while read -rp "  task add project:$project " -a args && [ "${#args[@]}" -gt 0 ]; do
+              task add project:"$project" "${args[@]}" \
+                && actions+=("$(task rc.verbose=nothing +LATEST uuids)")
+            done
 
-          # User has finished adding actions, organise them all.
-          for action in "${actions[@]}"; do
-            organise_action "$action"
-          done
+            # User has finished adding actions, organise them all.
+            local action
+            for action in "${actions[@]}"; do
+              organise_action "$action"
+            done
 
-          # Verify at least one action was added and delete the original inbox item, now stale.
-          if [ "${#actions[@]}" -gt 0 ]; then
-            task rc.confirmation=off "$uuid" delete
-          fi ;;
+            # Verify at least one action was added and delete the original inbox item, now stale.
+            if [ "${#actions[@]}" -gt 0 ]; then
+              task rc.confirmation=off "$uuid" delete
+            fi ;;
 
-       n) # Modify item to define the next action.
-          echo "Rephrase it as a visible, finite action (in Taskwarrior syntax)."
+         n) # Modify item to define the next action.
+            echo "Rephrase it as a visible, finite action (in Taskwarrior syntax)."
 
-          read -rp "  task $(task _get "$uuid".id) modify -in " -a args
-          task "$uuid" modify -in "${args[@]}"
-          organise_action "$uuid" ;;
+            local args
+            read -rp "  task $(task _get "$uuid".id) modify -in " -a args
+            task "$uuid" modify -in "${args[@]}"
+            organise_action "$uuid" ;;
 
-       *) echo "[ERROR] Invalid response." >&2 ; exit 1 ;;
-     esac ;;
+         *) echo "[ERROR] Invalid response." >&2 ; return 1 ;;
+       esac ;;
 
-  *) echo "[ERROR] Invalid response." >&2 ; exit 1 ;;
-esac
+    *) echo "[ERROR] Invalid response." >&2 ; return 1 ;;
+  esac
+}
+
+main() {
+  local uuid
+
+  while uuid=$(get_top_item) ; [ -n "$uuid" ]; do
+    process_item "$uuid"
+  done
+
+  echo "Inbox is empty!"
+}
+
+main
